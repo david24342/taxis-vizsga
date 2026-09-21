@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Taxis Vizsga – Helyismereti Teszt</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; background: #1a1a1a; color: #eee; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ── FEJLÉC ── */
+#question-bar {
+  background: #222; border-bottom: 2px solid #444;
+  padding: 8px 12px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 8px; min-height: 56px;
+}
+#question-text { flex: 1; font-size: 15px; font-weight: 700; color: #FFD700; line-height: 1.25; min-width: 0; }
+#question-sub { font-size: 11px; color: #888; font-weight: 400; display: block; margin-top: 2px; }
+
+/* ── FEEDBACK (mobilon alul lebegő panel) ── */
+#feedback-badge {
+  display: none;
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 8000;
+  background: #1b5e20; color: #a5d6a7;
+  font-size: 13px; font-weight: 700;
+  padding: 12px 16px 20px;
+  line-height: 1.4;
+  border-top: 3px solid #2e7d32;
+}
+.fb-ok  { background: #1b5e20 !important; color: #a5d6a7 !important; border-top-color: #2e7d32 !important; }
+.fb-err { background: #7f0000 !important; color: #ffcdd2 !important; border-top-color: #b71c1c !important; }
+.fb-rev { background: #263238 !important; color: #ccc !important; border-top-color: #444 !important; }
+
+.start-tooltip {
+  background: #FFD700 !important; color: #1a1a1a !important;
+  font-weight: 700 !important; border: 2px solid #B8860B !important;
+  font-size: 11px !important; box-shadow: 0 2px 6px rgba(0,0,0,0.5) !important;
+}
+.start-tooltip::before { border-right-color: #B8860B !important; }
+
+/* ── GOMBOK ── */
+.topbtn {
+  border: none; padding: 8px 11px; border-radius: 8px;
+  cursor: pointer; font-size: 12px; font-weight: 700;
+  white-space: nowrap; flex-shrink: 0; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+#next-btn  { background: #FFD700; color: #1a1a1a; display: none; }
+#reveal-btn { background: #444; color: #ccc; display: none; }
+#start-btn  { background: #4caf50; color: #fff; }
+#showall-btn { background: #37474F; color: #ccc; }
+
+/* ── SCORE BAR ── */
+#score-bar {
+  background: #1a1a1a; border-bottom: 1px solid #2a2a2a;
+  padding: 4px 12px; display: flex; align-items: center;
+  gap: 12px; font-size: 12px; color: #777; flex-shrink: 0;
+}
+.sc { color: #4caf50; font-weight: 700; }
+.sw { color: #f44336; font-weight: 700; }
+.sq { font-weight: 700; color: #aaa; }
+#streak-txt { margin-left: auto; color: #FFD700; font-weight: 700; display: none; font-size: 12px; }
+
+#progress-bar { height: 3px; background: #2a2a2a; flex-shrink: 0; }
+#progress-fill { height: 100%; background: #FFD700; transition: width 0.3s; width: 0%; }
+
+/* ── JELMAGYARÁZAT (mobilon összecsukható) ── */
+#legend {
+  background: #1e1e1e; padding: 4px 12px; display: flex;
+  flex-wrap: wrap; gap: 3px 10px; font-size: 10px; color: #888;
+  flex-shrink: 0; border-bottom: 1px solid #2a2a2a;
+}
+.leg { display: flex; align-items: center; gap: 3px; }
+.leg-dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.2); flex-shrink:0; }
+
+#map { flex: 1; }
+
+/* ── VÉGEREDMÉNY ── */
+#finish-screen {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.92); z-index: 9999;
+  align-items: center; justify-content: center;
+  flex-direction: column; gap: 16px; text-align: center; padding: 24px;
+}
+#finish-screen h2 { font-size: 28px; color: #FFD700; }
+#finish-screen p  { font-size: 18px; color: #ccc; white-space: pre-line; }
+#finish-screen button {
+  background: #FFD700; color: #1a1a1a; border: none;
+  padding: 14px 36px; border-radius: 12px; font-size: 16px;
+  font-weight: 700; cursor: pointer; margin-top: 8px;
+  touch-action: manipulation;
+}
+
+/* ── ASZTALI NÉZET (768px felett) ── */
+@media (min-width: 768px) {
+  #question-bar { padding: 10px 16px; min-height: 64px; gap: 10px; }
+  #question-text { font-size: 17px; }
+  #question-sub { font-size: 12px; }
+  .topbtn { font-size: 13px; padding: 7px 14px; }
+  #score-bar { padding: 5px 16px; gap: 16px; }
+  #streak-txt { font-size: 13px; }
+  #legend { padding: 5px 16px; gap: 4px 14px; font-size: 11px; }
+  .leg-dot { width: 10px; height: 10px; }
+
+  /* Asztali gépen a feedback visszakerül a fejlécbe */
+  #feedback-badge {
+    position: static;
+    border-top: none;
+    border-radius: 8px;
+    padding: 6px 12px 6px;
+    max-width: 280px;
+    font-size: 13px;
+  }
+  .fb-ok  { background: #1b5e20 !important; }
+  .fb-err { background: #b71c1c !important; color: #ef9a9a !important; }
+  .fb-rev { background: #333 !important; color: #aaa !important; }
+}
+</style>
+</head>
+<body>
+
+<div id="question-bar">
+  <div id="question-text">
+    Kattints az Indítás gombra!
+    <span id="question-sub">Fent megjelenik a keresett helyszín neve — keresd meg és kattints rá a térképen.</span>
+  </div>
+  <div id="feedback-badge"></div>
+  <button class="topbtn" id="reveal-btn" onclick="revealAnswer()">👁 Felfed</button>
+  <button class="topbtn" id="next-btn" onclick="nextQuestion()">Köv. →</button>
+  <button class="topbtn" id="showall-btn" onclick="toggleShowAll()" style="background:#37474F;color:#ccc;">🗺 Mind</button>
+  <button class="topbtn" id="start-btn" onclick="startQuiz()">▶ Start</button>
+</div>
+
+<div id="score-bar">
+  <span>Helyes: <span class="sc" id="nc">0</span></span>
+  <span>Rossz: <span class="sw" id="nw">0</span></span>
+  <span>Kérdés: <span class="sq" id="nq">–</span> / 65</span>
+  <span id="streak-txt"></span>
+</div>
+<div id="progress-bar"><div id="progress-fill"></div></div>
+
+<div id="legend">
+  <div class="leg"><span class="leg-dot" style="background:#1565C0"></span>1. Ferencváros</div>
+  <div class="leg"><span class="leg-dot" style="background:#B71C1C"></span>2. Pesterzsébet</div>
+  <div class="leg"><span class="leg-dot" style="background:#1B5E20"></span>3. Kispest</div>
+  <div class="leg"><span class="leg-dot" style="background:#4527A0"></span>4. Soroksár</div>
+  <div class="leg"><span class="leg-dot" style="background:#E65100"></span>5. Csepel</div>
+  <div class="leg"><span class="leg-dot" style="background:#880E4F"></span>6. Ferencváros–Soroksár</div>
+  <div class="leg"><span class="leg-dot" style="background:#37474F"></span>7. Belváros–Lágymányos</div>
+</div>
+
+<div id="map"></div>
+<div id="finish-screen">
+  <h2>🏁 Vége!</h2>
+  <p id="finish-text"></p>
+  <button onclick="startQuiz()">↺ Újrakezdés</button>
+</div>
+
+<script>
+const COLORS = {"1":"#1565C0","2":"#B71C1C","3":"#1B5E20","4":"#4527A0","5":"#E65100","6":"#880E4F","7":"#37474F"};
+
+const PLACES = [
+  ["Metro Áruház","Gyáli út 37","1",47.4596,19.1072],
+  ["Soroksári úti TESCO áruház","Koppány u. 2-4","1",47.4664,19.0798],
+  ["Budapest Park","Fábián Juli tér 1","1",47.4676,19.0770],
+  ["OBI Áruház","Soroksári út 33","1",47.4670,19.0754],
+  ["Nemzeti Atlétikai Központ","Hajóállomás u. 1","1",47.4632,19.0698],
+  ["Nemzeti Színház és Művészetek Palotája","Bajor Gizi park 1","1",47.4706,19.0711],
+  ["Szent István Kórház","Nagyvárad tér 1","1",47.4774,19.0882],
+  ["Szent László Kórház","Albert Flórián út 5-7","1",47.4755,19.0925],
+  ["Fradi Groupama Aréna","Üllői út 129","1",47.4754,19.0953],
+  ["Pestszenterzsébeti Főplébánia és Közösségi Háza","Kossuth Lajos u. 60","2",47.4406,19.1083],
+  ["Polgármesteri Hivatal Budapest XX.","Kossuth Lajos tér 1","2",47.4365,19.1017],
+  ["XX. Kerületi Szakrendelő","Ady Endre u. 1","2",47.4408,19.1021],
+  ["Erzsébeti McDonald's","Széchenyi u. 4","2",47.4386,19.1019],
+  ["Pesterzsébeti Uszoda","Zodony u. 1","2",47.4325,19.0958],
+  ["Pesterzsébeti Jódos-Sós Gyógy- és Strandfürdő","Vízisport u. 2","2",47.4354,19.0910],
+  ["XX. kerületi Budapesti Rendőr-főkapitányság","Török Flóris u. 78-82","2",47.4384,19.1065],
+  ["Buffalo Steak House","Török Flóris u. 217","2",47.4282,19.1196],
+  ["Apor Vilmos Katolikus Főiskola","Török Flóris u. 227-229","2",47.4269,19.1212],
+  ["Nótafa Vendéglő","Ady Endre út 3","3",47.4552,19.1387],
+  ["XIX. Kerületi Rendőrkapitányság","Ady Endre út 29","3",47.4563,19.1371],
+  ["Shopmark","Üllői út 201","3",47.4630,19.1297],
+  ["XVIII. és XIX. Kerületi Bíróság","Kossuth tér 7","3",47.4588,19.1462],
+  ["Kispest Polgármesteri Hivatal – Önkormányzata","Városház tér 18","3",47.4528,19.1497],
+  ["Kispesti Egészségügyi Intézet","Ady Endre út 122","3",47.4524,19.1439],
+  ["Bozsik Aréna","Puskás Ferenc u. 1-3","3",47.4427,19.1555],
+  ["Ormos Intézet","Hengersor u. 73","3",47.4446,19.1550],
+  ["Nemzeti Közlekedési Hatóság","Vas Gereben u. 2","3",47.4514,19.1569],
+  ["Pesterzsébeti Mentőállomás","Török Flóris u. 224","4",47.4249,19.1225],
+  ["Jahn Ferenc Dél-pesti Kórház és Rendelőintézet","Köves út 1","4",47.4239,19.1318],
+  ["St. Lőrinc Golf Club","Szentlőrinci út","4",47.4095,19.1401],
+  ["IKEA Soroksár","Bevásárló u. 4","4",47.4118,19.1598],
+  ["Budapesti Nagybani Piac","Nagykőrösi út 353","4",47.4159,19.1688],
+  ["Ecseri Piac","Nagykőrösi út 156","4",47.4359,19.1452],
+  ["Pesterzsébet Tesco Hipermarket","Mártírok útja 281","4",47.4275,19.1463],
+  ["Budapesti Fatimai Szűzanya templom","Szent László u. 149","4",47.4170,19.1318],
+  ["Soroksári Sportcsarnok","Sportcsarnok utca 2","4",47.4111,19.1335],
+  ["MTK Kajak-kenu vízitelep","Parti sétány","5",47.4336,19.0880],
+  ["XXI. Kerület Csepel Önkormányzata","Szent Imre tér 10","5",47.4303,19.0686],
+  ["XXI. Kerületi Csepel Rendőrkapitányság","Szent Imre tér 23","5",47.4322,19.0681],
+  ["Tóth Ilona Egészségügyi Szolgálat Szakorvosi Rendelőintézete","Görgey Artúr tér 8","5",47.4239,19.0705],
+  ["Csepel Mentőállomás","Görgey Artúr tér 8","5",47.4242,19.0705],
+  ["Csepel Plaza","II. Rákóczi Ferenc út 154-170","5",47.4236,19.0678],
+  ["Béke téri Stadion","Béke tér 1","5",47.4190,19.0728],
+  ["XX., XXI. és XXIII. kerületi bíróság","II. Rákóczi Ferenc u. 78-82","5",47.4330,19.0682],
+  ["VakVarjú Csónakház Étterem","Vízisport u. 12-18","5",47.4321,19.0911],
+  ["Lurdy Ház","Könyves Kálmán krt. 12-14","6",47.4708,19.0841],
+  ["Ferencváros vasútállomás","Könyves Kálmán krt. 3","6",47.4704,19.0894],
+  ["Budapest, Népliget autóbusz-állomás","Üllői út 131","6",47.4748,19.0988],
+  ["MVM Dome (Budapesti Multifunkcionális Sportcsarnok)","Üllői út 131","6",47.4742,19.1005],
+  ["Dél-pesti Centrumkórház – Merényi Gusztáv Kórház Telephely","Gyáli út 17-19","6",47.4669,19.1010],
+  ["Heim Pál Országos Gyermekgyógyászati Intézet","Üllői út 86","6",47.4784,19.0919],
+  ["Soroksár SC","Haraszti út 26","6",47.3906,19.1119],
+  ["Soroksár Önkormányzata – Polgármesteri Hivatal","Hősök tere 12","6",47.3985,19.1144],
+  ["Magyar Rádió épülete","Pollack Mihály tér 8-10","6",47.4923,19.0645],
+  ["Nemzeti Közszolgálati Egyetem","Ludovika tér 2","7",47.4818,19.0854],
+  ["Semmelweis Egyetem Szülészeti és Nőgyógyászati Klinika","Üllői út 78/A","7",47.4827,19.0818],
+  ["Mercure Budapest Korona Hotel","Kecskeméti u. 14","7",47.4902,19.0611],
+  ["Magyar Nemzeti Múzeum","Múzeum krt. 14-16","7",47.4912,19.0625],
+  ["Budapesti Corvinus Egyetem","Fővám tér 8","7",47.4862,19.0583],
+  ["Bálna Budapest","Fővám tér 11-12","7",47.4837,19.0609],
+  ["Budapesti Műszaki és Gazdaságtudományi Egyetem","Műegyetem rkp. 3","7",47.4782,19.0575],
+  ["Allee Bevásárlóközpont","Október huszonharmadika u. 8-10","7",47.4751,19.0491],
+  ["Dél-budai Centrumkórház","Tétényi út 12-16","7",47.4686,19.0346],
+  ["Hidegkuti Nándor Stadion (MTK)","Salgótarjáni u. 12-14","7",47.4910,19.1072],
+  ["Nemzeti Adó- és Vámhivatal (XIX. ker.)","Városház tér 18-20","3",47.4530,19.1500]
+];
+
+// ==== MUTASS MINDENT ====
+let showAllActive = false;
+
+function makeIdleIcon(i, labeled) {
+  const p = PLACES[i];
+  const col = COLORS[p[2]];
+  if (!labeled) {
+    return L.divIcon({
+      className:'',
+      html:`<div style="background:${col};width:20px;height:20px;border-radius:50%;border:2px solid rgba(255,255,255,0.5);box-shadow:0 1px 4px rgba(0,0,0,0.5);cursor:pointer;"></div>`,
+      iconSize:[20,20], iconAnchor:[10,10]
+    });
+  }
+  const short = p[0].length > 28 ? p[0].substring(0,26)+'…' : p[0];
+  return L.divIcon({
+    className:'',
+    html:`<div style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+      <div style="background:${col};width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,0.7);box-shadow:0 1px 4px rgba(0,0,0,0.5);flex-shrink:0;"></div>
+      <div style="background:${col};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,0.55);border:1.5px solid rgba(255,255,255,0.35);text-shadow:0 1px 2px rgba(0,0,0,0.6);">${short}</div>
+    </div>`,
+    iconSize:[20,20], iconAnchor:[7,7]
+  });
+}
+
+function toggleShowAll() {
+  showAllActive = !showAllActive;
+  const btn = document.getElementById('showall-btn');
+  if (showAllActive) {
+    btn.textContent = '🙈 Elrejt';
+    btn.style.background = '#FFD700';
+    btn.style.color = '#1a1a1a';
+    PLACES.forEach((_,i) => markers[i].setIcon(makeIdleIcon(i, true)));
+    map.setView([47.44, 19.09], 12, {animate:true});
+  } else {
+    btn.textContent = '🗺 Mutass mindent';
+    btn.style.background = '#37474F';
+    btn.style.color = '#ccc';
+    PLACES.forEach((_,i) => markers[i].setIcon(makeIdleIcon(i, false)));
+  }
+}
+
+// === SPACED REPETITION ===
+// queue: a kérdések sorban. Ha elrontasz, 2-3 kérdésen belül visszajön.
+let queue=[], qIdx=0, answered=false, revealed=false;
+let nCorrect=0, nWrong=0, streak=0, active=false;
+let wrongCounts={};  // hányszor rontottad el az adott indexet
+
+function buildQueue() {
+  // Véletlenszerű sorrend
+  const idx = PLACES.map((_,i)=>i);
+  for(let i=idx.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[idx[i],idx[j]]=[idx[j],idx[i]];}
+  return idx;
+}
+
+function insertRepeat(wrongIdx) {
+  // Elrontott kérdést visszaszúrjuk 2-4 kérdéssel később a queue-ban
+  const count = wrongCounts[wrongIdx] || 0;
+  // Minél többször rontod el, annál közelebb jön vissza (2 → 3-5, 3+ → 2-3)
+  const minGap = count >= 2 ? 2 : 3;
+  const maxGap = count >= 2 ? 3 : 5;
+  const gap = minGap + Math.floor(Math.random()*(maxGap-minGap+1));
+  const insertAt = Math.min(qIdx + 1 + gap, queue.length);
+  queue.splice(insertAt, 0, wrongIdx);
+}
+
+// Map
+const map = L.map('map').setView([47.44,19.09],12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'© <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors',
+  maxZoom:18
+}).addTo(map);
+
+// Start marker
+L.marker([47.4251,19.1045],{icon:L.divIcon({
+  className:'',iconSize:[34,34],iconAnchor:[17,17],
+  html:'<div style="background:#FFD700;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;border:2.5px solid #B8860B;box-shadow:0 2px 8px rgba(0,0,0,0.5);cursor:default;">★</div>'
+})}).bindPopup('<b>★ Helsinki út 81 – Kiindulópont</b>').addTo(map);
+
+// Minden pont EGYFORMA kis kör — semmi nem különbözteti meg a kérdéses pontot!
+function makeIcon(i, mode) {
+  const col = COLORS[PLACES[i][2]];
+  const name = PLACES[i][0];
+  if (mode === 'idle') {
+    return makeIdleIcon(i, showAllActive);
+  }
+  if (mode === 'correct') {
+    const shortName = name.length > 32 ? name.substring(0,30)+'…' : name;
+    return L.divIcon({
+      className:'',
+      html:`<div style="
+        background:#1b5e20;
+        padding:9px 16px;
+        border-radius:10px;
+        font-size:15px; font-weight:900; color:#fff;
+        border:4px solid #fff;
+        box-shadow:0 0 0 2px #1b5e20, 0 4px 20px rgba(0,0,0,0.9);
+        white-space:nowrap;
+        text-shadow:0 2px 4px rgba(0,0,0,0.8);
+        position:relative; z-index:9999;
+      ">✓ ${shortName}
+        <div style="position:absolute;bottom:-12px;left:18px;width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #fff;"></div>
+        <div style="position:absolute;bottom:-9px;left:20px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:9px solid #1b5e20;"></div>
+      </div>`,
+      iconSize:[20,20], iconAnchor:[10,10]
+    });
+  }
+  if (mode === 'wrong') {
+    return L.divIcon({
+      className:'',
+      html:`<div style="
+        background:#b71c1c;
+        padding:9px 16px;
+        border-radius:10px;
+        font-size:15px; font-weight:900; color:#fff;
+        border:4px solid #fff;
+        box-shadow:0 0 0 2px #b71c1c, 0 4px 20px rgba(0,0,0,0.9);
+        white-space:nowrap;
+        text-shadow:0 2px 4px rgba(0,0,0,0.8);
+        position:relative; z-index:9999;
+      ">✗ ROSSZ HELY
+        <div style="position:absolute;bottom:-12px;left:18px;width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #fff;"></div>
+        <div style="position:absolute;bottom:-9px;left:20px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:9px solid #b71c1c;"></div>
+      </div>`,
+      iconSize:[20,20], iconAnchor:[10,10]
+    });
+  }
+}
+
+const markers = PLACES.map((p,i) => {
+  const m = L.marker([p[3],p[4]], {icon:makeIcon(i,'idle')}).addTo(map);
+  m.on('click', () => onMarkerClick(i));
+  return m;
+});
+
+function shuffle(arr) {
+  const a=[...arr];
+  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
+  return a;
+}
+
+function startQuiz() {
+  document.getElementById('finish-screen').style.display='none';
+  document.getElementById('start-btn').textContent='↺ Újrakezdés';
+  queue=buildQueue();
+  qIdx=0; nCorrect=0; nWrong=0; streak=0; answered=false; revealed=false; active=true;
+  wrongCounts={};
+  document.getElementById('nc').textContent=0;
+  document.getElementById('nw').textContent=0;
+  document.getElementById('streak-txt').style.display='none';
+  PLACES.forEach((_,i)=>markers[i].setIcon(makeIcon(i,'idle')));
+  showQuestion();
+}
+
+function showQuestion() {
+  answered=false; revealed=false;
+  document.getElementById('feedback-badge').style.display='none';
+  document.getElementById('map').style.marginBottom = '0';
+  document.getElementById('next-btn').style.display='none';
+  document.getElementById('reveal-btn').style.display='block';
+  clearRoute();
+  PLACES.forEach((_,i)=>markers[i].setIcon(makeIcon(i,'idle')));
+
+  const i=queue[qIdx];
+  const p=PLACES[i];
+  const isRepeat = wrongCounts[i] && wrongCounts[i]>0;
+  const repeatBadge = isRepeat
+    ? `&nbsp;<span style="background:#c62828;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:700;">↩ ISMÉTLÉS</span>`
+    : '';
+  document.getElementById('question-text').innerHTML=
+    `Hol van: <span style="color:#fff;">${p[0]}</span>${repeatBadge}<span id="question-sub" style="display:block;font-size:12px;color:#888;font-weight:400;margin-top:3px;">Kattints rá a térképen! &nbsp;|&nbsp; <b style="color:#aaa;">${p[2]}. terület</b></span>`;
+  // Progress: az eredeti 65 kérdés alapján (nem a queue teljes hossza)
+  const origDone = Math.min(qIdx, 65);
+  document.getElementById('nq').textContent=qIdx+1;
+  document.getElementById('progress-fill').style.width=((Math.min(qIdx,65)/65)*100)+'%';
+}
+
+// ==== ÚTVONAL (OSRM) ====
+const START_LAT = 47.4251;
+const START_LNG = 19.1045;
+let routeLayers = [];
+
+async function drawRoute(toLat, toLng) {
+  clearRoute();
+  try {
+    // Oda útvonal: Helsinki → cél
+    const url = `https://router.project-osrm.org/route/v1/driving/${START_LNG},${START_LAT};${toLng},${toLat}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.code !== 'Ok' || !data.routes.length) return;
+
+    const geojson = data.routes[0].geometry;
+    const distKm = (data.routes[0].distance / 1000).toFixed(1);
+    const durMin = Math.round(data.routes[0].duration / 60);
+    const odaVissza = (distKm * 2).toFixed(1);
+
+    // Fehér körvonal - vékony, csak a vonal széleit jelzi
+    const outline = L.geoJSON(geojson, {
+      style: { color: '#fff', weight: 5, opacity: 0.5, lineJoin:'round', lineCap:'round' }
+    }).addTo(map);
+
+    // ODA vonal: sötétkék, vékony, félig átlátszó
+    const oda = L.geoJSON(geojson, {
+      style: { color: '#1565C0', weight: 3, opacity: 0.6, lineJoin:'round', lineCap:'round' }
+    }).addTo(map);
+
+    // VISSZA vonal: szaggatott, még vékonyabb
+    const coords = geojson.coordinates;
+    const reversed = { type:'LineString', coordinates: [...coords].reverse() };
+    const vissza = L.geoJSON({type:'Feature', geometry: reversed}, {
+      style: { color: '#42a5f5', weight: 2, opacity: 0.5, lineJoin:'round', lineCap:'round',
+               dashArray: '8 7' }
+    }).addTo(map);
+
+    // Kiindulópont jelölő
+    const startCircle = L.circleMarker([START_LAT, START_LNG], {
+      radius: 10, fillColor: '#FFD700', color: '#333', weight: 2, fillOpacity: 1
+    }).bindTooltip('★ Helsinki út 81', {permanent:true, direction:'right', className:'start-tooltip'}).addTo(map);
+
+    routeLayers = [outline, oda, vissza, startCircle];
+
+    // Távolság kiírása
+    const distInfo = `  🚕 oda: ${distKm} km · oda-vissza: ${odaVissza} km (~${durMin} perc)`;
+    const fb = document.getElementById('feedback-badge');
+    if (fb.style.display !== 'none') {
+      fb.textContent += distInfo;
+    }
+  } catch(e) {
+    console.log('Útvonal lekérés sikertelen:', e);
+  }
+}
+
+function clearRoute() {
+  routeLayers.forEach(l => { if(l) map.removeLayer(l); });
+  routeLayers = [];
+}
+
+function onMarkerClick(clickedIdx) {
+  if(!active || answered) return;
+  answered=true;
+  document.getElementById('reveal-btn').style.display='none';
+  const correctIdx=queue[qIdx];
+  clearRoute();
+
+  if(clickedIdx===correctIdx) {
+    nCorrect++; streak++;
+    document.getElementById('nc').textContent=nCorrect;
+    markers[clickedIdx].setIcon(makeIcon(clickedIdx,'correct'));
+    showFb('✓ Helyes!','ok');
+    if(streak>=3){
+      document.getElementById('streak-txt').textContent='🔥 '+streak+' sorozat!';
+      document.getElementById('streak-txt').style.display='block';
+    }
+    // Útvonal a helyes ponthoz
+    drawRoute(PLACES[correctIdx][3], PLACES[correctIdx][4]);
+    // Zoom hogy az útvonal is látsszon
+    const bounds = L.latLngBounds([START_LAT, START_LNG], [PLACES[correctIdx][3], PLACES[correctIdx][4]]);
+    map.fitBounds(bounds, {padding:[80,80], maxZoom:14, animate:true, duration:0.6});
+  } else {
+    nWrong++; streak=0;
+    document.getElementById('nw').textContent=nWrong;
+    document.getElementById('streak-txt').style.display='none';
+    markers[clickedIdx].setIcon(makeIcon(clickedIdx,'wrong'));
+    markers[correctIdx].setIcon(makeIcon(correctIdx,'correct'));
+    wrongCounts[correctIdx]=(wrongCounts[correctIdx]||0)+1;
+    insertRepeat(correctIdx);
+    const times=wrongCounts[correctIdx];
+    const extra = times===1 ? ' ↩ Visszajön 3-5 kérdésen belül!' : ` ↩ ${times}. alkalom – visszajön hamarabb!`;
+    showFb('✗ Nem ez! A helyes: '+PLACES[correctIdx][0]+' ('+PLACES[correctIdx][1]+')'+extra,'err');
+    // Útvonal a HELYES ponthoz
+    drawRoute(PLACES[correctIdx][3], PLACES[correctIdx][4]);
+    // Zoom hogy mindkét pont + start látsszon
+    const bounds = L.latLngBounds(
+      [PLACES[clickedIdx][3], PLACES[clickedIdx][4]],
+      [PLACES[correctIdx][3], PLACES[correctIdx][4]]
+    ).extend([START_LAT, START_LNG]);
+    map.fitBounds(bounds, {padding:[100,100], maxZoom:14, animate:true, duration:0.6});
+  }
+  document.getElementById('next-btn').style.display='block';
+}
+
+function revealAnswer() {
+  if(!active||answered) return;
+  answered=true; revealed=true;
+  document.getElementById('reveal-btn').style.display='none';
+  const correctIdx=queue[qIdx];
+  clearRoute();
+  markers[correctIdx].setIcon(makeIcon(correctIdx,'correct'));
+  nWrong++; streak=0;
+  document.getElementById('nw').textContent=nWrong;
+  document.getElementById('streak-txt').style.display='none';
+  wrongCounts[correctIdx]=(wrongCounts[correctIdx]||0)+1;
+  insertRepeat(correctIdx);
+  showFb('👁 '+PLACES[correctIdx][0]+' — '+PLACES[correctIdx][1]+' ↩ Visszajön hamarosan!','rev');
+  drawRoute(PLACES[correctIdx][3], PLACES[correctIdx][4]);
+  const bounds = L.latLngBounds([START_LAT, START_LNG], [PLACES[correctIdx][3], PLACES[correctIdx][4]]);
+  map.fitBounds(bounds, {padding:[80,80], maxZoom:14, animate:true, duration:0.6});
+  document.getElementById('next-btn').style.display='block';
+}
+
+function showFb(msg, type) {
+  const el = document.getElementById('feedback-badge');
+  el.textContent = msg;
+  el.className = type==='ok' ? 'fb-ok' : type==='err' ? 'fb-err' : 'fb-rev';
+  el.style.display = 'block';
+  // Mobilon a térkép alsó padding hogy a panel ne takarja
+  if (window.innerWidth < 768) {
+    document.getElementById('map').style.marginBottom = el.offsetHeight + 'px';
+    setTimeout(() => {
+      document.getElementById('map').style.marginBottom = el.offsetHeight + 'px';
+    }, 50);
+  }
+}
+
+function nextQuestion() {
+  qIdx++;
+  // Ha elfogyott az eredeti 65, de még vannak ismétlések
+  if(qIdx>=queue.length){finishQuiz();return;}
+  showQuestion();
+}
+
+function finishQuiz() {
+  active=false;
+  document.getElementById('progress-fill').style.width='100%';
+  document.getElementById('reveal-btn').style.display='none';
+  document.getElementById('next-btn').style.display='none';
+  const total=nCorrect+nWrong;
+  const pct=total>0?Math.round((nCorrect/total)*100):0;
+  const emoji=pct>=90?'🏆':pct>=70?'👍':pct>=50?'😊':'📚';
+  const wrongUniq=Object.keys(wrongCounts).length;
+  document.getElementById('finish-text').textContent=
+    `${emoji} ${nCorrect} helyes / ${nWrong} rossz — ${pct}%`+
+    (wrongUniq>0?`\n${wrongUniq} helyszín volt nehéz`:'');
+  document.getElementById('finish-screen').style.display='flex';
+}
+
+document.addEventListener('keydown',e=>{
+  if((e.key===' '||e.key==='Enter')&&answered)nextQuestion();
+});
+</script>
+</body>
+</html>
